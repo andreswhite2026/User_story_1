@@ -65,10 +65,6 @@ with tab1:
             except Exception as e:
                 st.error(f"Error crítico en el backend de español: {e}")
 
-
-# =====================================================================
-# PESTAÑA 2: Módulo Inglés (generate_excel_en.py)
-# =====================================================================
 # =====================================================================
 # PESTAÑA 2: Módulo Inglés (CON SOPORTE DE LOTES Y CARPETAS)
 # =====================================================================
@@ -194,7 +190,6 @@ with tab3:
                 tokens_dir_reales = paquete_metricas["tokens_directo"]
                 tokens_opt_reales = paquete_metricas["tokens_optimizado"]
 
-                # Fórmulas de proyección alineadas con tu lógica de 10k reseñas/día
                 # Calculamos el promedio de tokens por fila para proyectar a 10.000 registros estándar
                 tokens_promedio_dir = tokens_dir_reales / total_filas_reales if total_filas_reales > 0 else 0
                 tokens_promedio_opt = tokens_opt_reales / total_filas_reales if total_filas_reales > 0 else 0
