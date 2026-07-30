@@ -78,13 +78,14 @@ def generar_resenas_excel_es(num_filas=50000):
 
         data.append(
             {
-                "customer_id": id_cliente,
-                "customer_name": cliente,
-                "city": ciudad,
-                "product": producto,
-                "reseña": resena,  # Cabecera cambiada a español para que coincida con tus plantillas
+                "id_cliente": id_cliente,
+                "nombre_cliente": cliente,
+                "ciudad": ciudad,
+                "producto": producto,
+                "reseña": resena,
             }
         )
+
 
     print("Creando DataFrame de Pandas...")
     df = pd.DataFrame(data)
@@ -96,6 +97,63 @@ def generar_resenas_excel_es(num_filas=50000):
     print(
         f"¡Proceso completado con éxito! Archivo creado: {Path(nombre_archivo).resolve()}"
     )
+
+def generar_desde_web_es(nombre_archivo_web, num_filas=50000, cantidad_archivos=1):
+    """Versión automatizada para Streamlit. Soporta generación individual o en lote dentro de carpetas."""
+    import random
+    import time
+    from pathlib import Path
+    import pandas as pd
+    from faker import Faker
+
+    base_path = Path.cwd()
+    timestamp_carpeta = time.strftime("%Y%m%d_%H%M%S")
+    
+    # Si el usuario quiere más de 1 archivo, creamos una carpeta contenedora dedicada
+    if cantidad_archivos > 1:
+        nombre_dir = nombre_archivo_web if nombre_archivo_web else f"lote_espanol_{timestamp_carpeta}"
+        carpeta_destino = base_path / nombre_dir
+        carpeta_destino.mkdir(parents=True, exist_ok=True)
+    else:
+        carpeta_destino = base_path
+
+    fake = Faker("es_ES")
+    productos_cat = ["Auriculares Inalámbricos Bluetooth", "Smartphone Pro Max 256GB", "Portátil Gaming 15.6''", "Reloj Inteligente Deportivo", "Cámara Digital 4K", "Teclado Mecánico RGB", "Monitor LED Curvo 27''", "Silla de Oficina Ergonómica", "Cafetera Espresso Automática", "Robot Aspirador", "Mochila Antirrobo Impermeable", "Altavoz Portátil Resistente al Agua"]
+    plantillas_resenas = ["Excelente producto, superó mis expectativas.", "Llegó a tiempo y en perfecto estado. Muy recomendado.", "La calidad del material es acceptable por el precio.", "No me gustó la calidad del producto, esperaba más.", "Pésimo servicio de entrega, llegó dañado.", "Funciona muy bien, lo uso todos los días.", "Buen diseño y materiales, aunque podría ser un poco más barato.", "Cumple con lo promised en la descripción."]
+
+    # Ciclo para generar la cantidad de archivos solicitada
+    for i in range(1, cantidad_archivos + 1):
+        if cantidad_archivos > 1:
+            nombre_archivo = f"resenas_parte_{i}_{timestamp_carpeta}.xlsx"
+        else:
+            nombre_archivo = f"{nombre_archivo_web}.xlsx" if nombre_archivo_web else f"resenas_productos_{timestamp_carpeta}.xlsx"
+            if not nombre_archivo.endswith(".xlsx"):
+                nombre_archivo += ".xlsx"
+
+        ruta_final_archivo = carpeta_destino / nombre_archivo
+
+        data = []
+        for _ in range(num_filas):
+            id_cliente = fake.uuid4()[:8].upper()
+            if random.random() < 0.25:
+                resena = ""
+            else:
+                resena = f"{random.choice(plantillas_resenas)} {fake.sentence(nb_words=6)}"
+            
+            data.append({
+                "id_cliente": id_cliente,
+                "nombre_cliente": fake.name(),
+                "ciudad": fake.city(),
+                "producto": random.choice(productos_cat),
+                "reseña": resena
+            })
+
+        df = pd.DataFrame(data)
+        df.to_excel(ruta_final_archivo, index=False, engine="openpyxl")
+
+    # Retornamos la ruta absoluta de la carpeta (o del archivo si fue individual)
+    return Path(carpeta_destino).resolve()
+
 
 
 if __name__ == "__main__":

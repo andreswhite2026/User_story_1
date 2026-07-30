@@ -228,6 +228,9 @@ def calcular_impacto_economico(
 # ==========================================
 # MÓDULO DE LIMPIEZA DE DATOS (FASE 2)
 # ==========================================
+# ==========================================
+# MÓDULO DE LIMPIEZA DE DATOS (FASE 2)
+# ==========================================
 def limpiar_columna_resenas(df: pd.DataFrame, idioma: str, opt_tokens: bool) -> tuple:
     nombre_columna = PLANTILLAS[idioma]["columna"]
     texto_vacio = PLANTILLAS[idioma]["vacio"]
@@ -270,9 +273,10 @@ def limpiar_columna_resenas(df: pd.DataFrame, idioma: str, opt_tokens: bool) -> 
     df_limpio[columna_exacta] = df_limpio[columna_exacta].apply(extraer_texto_valido)
 
     # --- CÁLCULO DE TOKENS OPTIMIZADO Y TRADUCCIÓN ---
+
     tokens_optimizado_acumulados = 0
     if opt_tokens and idioma == "ES":
-        # Traducir nombres de productos si existe la columna
+        # 1. Buscador inteligente y flexible de la columna producto
         col_producto = next((c for c in df_limpio.columns if c.lower() in ["product", "producto"]), None)
         if col_producto:
             def traducir_producto(prod):
@@ -280,7 +284,7 @@ def limpiar_columna_resenas(df: pd.DataFrame, idioma: str, opt_tokens: bool) -> 
                 return TRADUCCIONES_PRODUCTOS.get(prod_str.lower(), prod_str)
             df_limpio[col_producto] = df_limpio[col_producto].apply(traducir_producto)
 
-        # Traducir y contar las reseñas
+        # 2. Traducir y contar las reseñas
         def traducir_y_contar(texto):
             nonlocal tokens_optimizado_acumulados
             texto_traducido, tks = pipeline_optimizacion_tokens(texto, opt_tokens=True)
@@ -288,10 +292,34 @@ def limpiar_columna_resenas(df: pd.DataFrame, idioma: str, opt_tokens: bool) -> 
             return texto_traducido
 
         df_limpio[columna_exacta] = df_limpio[columna_exacta].apply(traducir_y_contar)
+        
+        # =====================================================================
+        # SOLUCIÓN COMPLETA: Mapeo de cabeceras de Español a Inglés para Lotes
+        # =====================================================================
+        diccionario_renombrado = {
+            columna_exacta: "review",
+            "id_cliente": "customer_id",
+            "nombre_cliente": "customer_name",
+            "ciudad": "city"
+        }
+        if col_producto:
+            diccionario_renombrado[col_producto] = "product"
+            
+        # Aplicamos el renombrado masivo de columnas al DataFrame
+        df_limpio = df_limpio.rename(columns=diccionario_renombrado)
+        columna_exacta = "review"
+        
     else:
         for texto in df_limpio[columna_exacta].astype(str):
             _, tks = pipeline_optimizacion_tokens(texto, opt_tokens=False)
             tokens_optimizado_acumulados += tks
+
+    # Clasificación técnica adaptativa al idioma
+
+        for texto in df_limpio[columna_exacta].astype(str):
+                _, tks = pipeline_optimizacion_tokens(texto, opt_tokens=False)
+                tokens_optimizado_acumulados += tks
+        
 
     # Diccionarios de traducción interna para los valores de clasificación técnica (Criterio 3)
     TRADUCCION_VALORES = {
@@ -322,19 +350,21 @@ def limpiar_columna_resenas(df: pd.DataFrame, idioma: str, opt_tokens: bool) -> 
                     datos_en = datos_clasificados
                     break
         
-        # SI EL IDIOMA FINAL DE SALIDA ES ESPAÑOL (Es decir, idioma original ES y opt_tokens desactivada)
-        if idioma == "ES" and not opt_tokens:
+        # Es salida en Español SOLO si el archivo original es ES y la optimización está desactivada
+        es_salida_espanol = (idioma == "ES" and not opt_tokens)
+
+        if es_salida_espanol:
             return {
                 "col_error": "tipo_error",
                 "col_componente": "componente",
                 "val_error": TRADUCCION_VALORES.get(datos_en["error_type"], datos_en["error_type"]),
                 "val_componente": TRADUCCION_VALORES.get(datos_en["component"], datos_en["component"])
             }
-        # SI LA SALIDA FINAL SE MANTIENE EN INGLÉS (Caso nativo EN, o ES con traducción activa)
         else:
+            # CAMBIO CLAVE 2: Salida nativa y estructurada en Inglés exigida por la HU-012
             return {
                 "col_error": "error_type",
-                "col_componente": "componente", # Mantiene consistencia bilingüe si lo deseas o puedes cambiarlo a "component"
+                "col_componente": "component",  # Corregido a 'component'
                 "val_error": datos_en["error_type"],
                 "val_componente": datos_en["component"]
             }
@@ -498,6 +528,105 @@ def ejecutar_sistema():
         print(f"\n❌ ERROR CRÍTICO EN EL SISTEMA:\n{e}")
         input("\nPresione Enter para volver al menú...")
         return ejecutar_sistema()
+
+def procesar_desde_web_streamlit(modo_carga, ruta_input, idioma, opt_tokens_flag, nombre_carpeta_salida="Resultados_Limpios"):
+    """
+    Versión automatizada de ejecutar_sistema() que no solicita inputs por terminal
+    y devuelve los resultados estructurados directamente al frontend web.
+    """
+    ruta_elemento = Path(ruta_input)
+    
+    # --- Criterio 1: Carga Flexible de Archivos ---
+    if modo_carga == "A":
+        if not ruta_elemento.is_file() or ruta_elemento.suffix.lower() != ".xlsx":
+            raise FileNotFoundError("La ruta no corresponde a un archivo .xlsx válido.")
+        archivos = [ruta_elemento]
+        carpeta_origen = ruta_elemento.parent
+    else:
+        if not ruta_elemento.is_dir():
+            raise NotADirectoryError("La carpeta origen no existe.")
+        archivos = [f for f in ruta_elemento.glob("*.xlsx") if not f.name.startswith("~$") and f.is_file()]
+        if not archivos:
+            raise FileNotFoundError("No se encontraron archivos .xlsx válidos en la carpeta.")
+        carpeta_origen = ruta_elemento
+
+    # Configuración de la carpeta de salida
+    if not nombre_carpeta_salida:
+        nombre_carpeta_salida = "Resultados_Limpios"
+    carpeta_final = carpeta_origen / nombre_carpeta_salida
+    carpeta_final.mkdir(parents=True, exist_ok=True)
+    
+    lista_dataframes_consolidados = []
+    total_tokens_dir_acumulados = 0
+    total_tokens_opt_acumulados = 0
+    total_filas_acumuladas = 0
+    archivos_procesados_nombres = []
+
+    for archivo in archivos:
+        df = pd.read_excel(archivo, engine="openpyxl")
+        
+        # Llamada exacta a tu función nativa de limpieza (con 3 retornos)
+        df_limpio, tokens_dir, tokens_opt = limpiar_columna_resenas(df, idioma, opt_tokens_flag)
+        
+        lista_dataframes_consolidados.append(df_limpio)
+        total_tokens_dir_acumulados += tokens_dir
+        total_tokens_opt_acumulados += tokens_opt
+        total_filas_acumuladas += len(df)
+        
+                # SOLUCIÓN: Si es Modo A, usamos exactamente el nombre que pusiste en la interfaz web
+        if modo_carga == "A":
+            # Si el usuario no escribió un nombre específico en la web, usamos por defecto 'limpio'
+            if not nombre_carpeta_salida or nombre_carpeta_salida == "Resultados_Limpios":
+                ref_name = "limpio"
+            else:
+                ref_name = nombre_carpeta_salida.replace(".xlsx", "")
+        else:
+            # Si es Modo B (Lote), mantenemos el sufijo limpio por archivo para que no se sobrescriban entre sí
+            ref_name = f"{archivo.stem}_limpio"
+            
+        ruta_salida = carpeta_final / f"{ref_name}.xlsx"
+
+        guardar_excel_individual(df_limpio, ruta_salida)
+        archivos_procesados_nombres.append(archivo.name)
+        
+        # Llamada exacta a tu generador de JSON de Auditoría
+        calcular_impacto_economico(tokens_dir, tokens_opt, len(df), carpeta_final, ref_name, df_limpio)
+
+    # Consolidación Reporte Maestro
+    # REQUERIMIENTO COMPLEMENTARIO CRITERIO 1 Y 3: Consolidación total (SOLO PARA MODO B)
+    if modo_carga == "B" and lista_dataframes_consolidados:
+        df_maestro = pd.concat(lista_dataframes_consolidados, ignore_index=True)
+        ruta_consolidada = carpeta_final / "REPORTE_MAESTRO_CONSOLIDADO.xlsx"
+        guardar_excel_individual(df_maestro, ruta_consolidada)
+
+        # Guardar JSON Maestro Consolidado (Auditoría Financiera Agregada del Lote)
+        calcular_impacto_economico(
+            total_tokens_dir_acumulados,
+            total_tokens_opt_acumulados,
+            total_filas_acumuladas,
+            carpeta_final,
+            "MAESTRO_CONSOLIDADO",
+            df_maestro
+        )
+    else:
+        # Si es Modo A, extraemos el único archivo procesado de la lista para la vista de la web
+        # Se elimina por completo la llamada a calcular_impacto_economico para evitar archivos fantasmas
+        if lista_dataframes_consolidados and len(lista_dataframes_consolidados) > 0:
+            df_maestro = lista_dataframes_consolidados[0]
+        else:
+            df_maestro = pd.DataFrame()
+
+
+    metricas = {
+        "archivos_procesados": archivos_procesados_nombres,
+        "total_archivos": len(archivos),
+        "total_filas": total_filas_acumuladas,
+        "tokens_directo": total_tokens_dir_acumulados,
+        "tokens_optimizado": total_tokens_opt_acumulados,
+        "ruta_salida_final": str(carpeta_final)
+    }
+    
+    return metricas, df_maestro
 
 
 if __name__ == "__main__":

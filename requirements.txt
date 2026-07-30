@@ -4,3 +4,9 @@ tiktoken
 numpy
 openpyxl
 requests
+streamlit
+
+para correrlo necesitas escribir el siguiente comando en tu terminal:
+streamlit run frontend.py
+
+y luego te va a salir la opcion de registrar un Email, solo necesitas ingresar Enter y dejar el espacio vacio. y se iniciara la pagina web.
